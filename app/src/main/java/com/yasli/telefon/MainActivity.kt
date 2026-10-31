@@ -1,7 +1,10 @@
 package com.yasli.telefon
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.role.RoleManager
+import android.provider.AlarmClock
+import java.util.Calendar
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -191,6 +194,7 @@ class MainActivity : ComponentActivity() {
                 e == "son" -> SonCagrilarEkrani(y)
                 e == "ayarlar" -> AyarlarEkrani(y)
                 e == "yeni" -> YeniKisiEkrani()
+                e == "alarm" -> AlarmEkrani(y)
                 e.startsWith("sec") -> KisilerEkrani(y, secimKutusu = e.removePrefix("sec").toIntOrNull() ?: 0)
                 else -> AnaEkran(y)
             }
@@ -250,7 +254,7 @@ class MainActivity : ComponentActivity() {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Saat()
+            Saat(y) { ekran.value = "alarm" }
             if (aktifCagri != null) {
                 BuyukDugme("GÖRÜŞMEYE DÖN", Renk.Yesil, yukseklik = 72.dp, fontBoyu = 26.sp, ikon = R.drawable.ik_telefon) {
                     startActivity(Intent(ctx, CallActivity::class.java))
@@ -294,14 +298,21 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Saat() {
+    private fun Saat(y: Int, tikla: () -> Unit) {
+        val sonrakiAlarm = remember(y) { sonrakiAlarmYazisi() }
         val simdi by produceState(System.currentTimeMillis()) {
             while (true) {
                 value = System.currentTimeMillis()
                 delay(1000)
             }
         }
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .clickable(onClick = tikla),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 SimpleDateFormat("HH:mm", TR).format(Date(simdi)),
                 fontSize = 68.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep,
@@ -311,6 +322,9 @@ class MainActivity : ComponentActivity() {
                 SimpleDateFormat("EEEE, d MMMM", TR).format(Date(simdi)),
                 fontSize = 22.sp, color = Renk.Soluk
             )
+            if (sonrakiAlarm != null) {
+                Text("Alarm: $sonrakiAlarm", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Renk.Yesil)
+            }
         }
     }
 
@@ -670,6 +684,112 @@ class MainActivity : ComponentActivity() {
                 Text(baslik, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep)
                 Text(alt, fontSize = 16.sp, color = Renk.Soluk)
             }
+        }
+    }
+
+    // ================= ALARM =================
+
+    /** Telefonda kurulu bir sonraki alarm, örn. "Yarın 07:30". Yoksa null. */
+    private fun sonrakiAlarmYazisi(): String? {
+        val zaman = getSystemService(AlarmManager::class.java)?.nextAlarmClock?.triggerTime ?: return null
+        val o = Calendar.getInstance().apply { timeInMillis = zaman }
+        val bugun = Calendar.getInstance()
+        val yarin = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+        fun ayni(a: Calendar, b: Calendar) =
+            a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+        val saat = SimpleDateFormat("HH:mm", TR).format(Date(zaman))
+        return when {
+            ayni(o, bugun) -> "Bugün $saat"
+            ayni(o, yarin) -> "Yarın $saat"
+            else -> SimpleDateFormat("EEEE HH:mm", TR).format(Date(zaman))
+        }
+    }
+
+    private fun alarmKur(saat: Int, dakika: Int) {
+        val niyet = Intent(AlarmClock.ACTION_SET_ALARM)
+            .putExtra(AlarmClock.EXTRA_HOUR, saat)
+            .putExtra(AlarmClock.EXTRA_MINUTES, dakika)
+            .putExtra(AlarmClock.EXTRA_MESSAGE, "Alarm")
+            .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+        try {
+            startActivity(niyet)
+            Toast.makeText(this, "Alarm kuruldu: %02d:%02d".format(saat, dakika), Toast.LENGTH_LONG).show()
+            ekran.value = "ana"
+        } catch (e: Exception) {
+            Toast.makeText(this, "Alarm kurulamadı", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Composable
+    private fun AlarmEkrani(y: Int) {
+        val sonraki = remember(y) { sonrakiAlarmYazisi() }
+        var saat by remember { mutableIntStateOf(7) }
+        var dakika by remember { mutableIntStateOf(0) }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                GeriBaslik("Alarm kur") { ekran.value = "ana" }
+            }
+            Text(
+                if (sonraki != null) "Kurulu alarm: $sonraki" else "Kurulu alarm yok",
+                fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                color = if (sonraki != null) Renk.Yesil else Renk.Soluk
+            )
+            Text("Kaçta çalsın?", fontSize = 24.sp, color = Renk.Murekkep)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ZamanSecici("SAAT", "%02d".format(saat), { saat = (saat + 1) % 24 }, { saat = (saat + 23) % 24 })
+                Text(":", fontSize = 64.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep)
+                ZamanSecici("DAKİKA", "%02d".format(dakika), { dakika = (dakika + 5) % 60 }, { dakika = (dakika + 55) % 60 })
+            }
+            Spacer(Modifier.height(6.dp))
+            BuyukDugme("ALARMI KUR", Renk.Yesil, yukseklik = 100.dp, fontBoyu = 34.sp) { alarmKur(saat, dakika) }
+            BuyukDugme(
+                "KURULU ALARMLAR", Renk.Beyaz, yaziRengi = Renk.Murekkep, kenar = Renk.Cizgi,
+                yukseklik = 76.dp, fontBoyu = 24.sp
+            ) {
+                try {
+                    startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS))
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Saat uygulaması bulunamadı", Toast.LENGTH_LONG).show()
+                }
+            }
+            Text(
+                "Alarmı kapatmak ya da silmek için \"Kurulu alarmlar\"a dokunun.",
+                fontSize = 17.sp, color = Renk.Soluk, textAlign = TextAlign.Center
+            )
+        }
+    }
+
+    @Composable
+    private fun ZamanSecici(baslik: String, deger: String, artir: () -> Unit, azalt: () -> Unit) {
+        val sekil = RoundedCornerShape(18.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(baslik, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Renk.Soluk)
+            Box(
+                modifier = Modifier.size(width = 120.dp, height = 72.dp).clip(sekil).background(Renk.Murekkep)
+                    .clickable(onClick = artir),
+                contentAlignment = Alignment.Center
+            ) { Text("+", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Renk.Beyaz) }
+            Box(
+                modifier = Modifier.size(width = 120.dp, height = 96.dp).clip(sekil).background(Renk.Beyaz)
+                    .border(2.dp, Renk.Cizgi, sekil),
+                contentAlignment = Alignment.Center
+            ) { Text(deger, fontSize = 60.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep) }
+            Box(
+                modifier = Modifier.size(width = 120.dp, height = 72.dp).clip(sekil).background(Renk.Murekkep)
+                    .clickable(onClick = azalt),
+                contentAlignment = Alignment.Center
+            ) { Text("−", fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Renk.Beyaz) }
         }
     }
 
