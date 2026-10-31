@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,6 +63,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +82,10 @@ class MainActivity : ComponentActivity() {
 
     // Hangi sayfadayız: "ana", "kisiler", "son", "ayarlar", "sec0".."sec5"
     private val ekran = mutableStateOf("ana")
+    // "Önce sor" ayarında ARA / KAPAT ekranında gösterilen kişi
+    private data class Onay(val isim: String, val numara: String, val kisiId: Long?)
+    private val onay = mutableStateOf<Onay?>(null)
+
     // Geri gelince listeleri tazelemek için sayaç
     private val yenile = mutableIntStateOf(0)
 
@@ -90,6 +98,7 @@ class MainActivity : ComponentActivity() {
         val l = mutableListOf(
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_CONTACTS,
+            Manifest.permission.WRITE_CONTACTS,
             Manifest.permission.READ_CALL_LOG,
             Manifest.permission.READ_PHONE_STATE
         )
@@ -113,6 +122,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         yenile.intValue++
+    }
+
+    /** Ayara göre ya hemen arar ya da önce ARA / KAPAT ekranını açar. */
+    private fun araIstegi(isim: String, numara: String, kisiId: Long?) {
+        if (numara.isBlank()) return
+        if (Veri.tekDokunus(this)) Veri.ara(this, numara) else onay.value = Onay(isim, numara, kisiId)
     }
 
     private fun varsayilanTelefonMu(): Boolean {
@@ -157,7 +172,12 @@ class MainActivity : ComponentActivity() {
     private fun Uygulama() {
         val y = yenile.intValue
         BackHandler {
-            ekran.value = if (ekran.value.startsWith("sec")) "ayarlar" else "ana"
+            val e = ekran.value
+            ekran.value = when {
+                e.startsWith("sec") -> "ayarlar"
+                e == "yeni" -> "kisiler"
+                else -> "ana"
+            }
         }
         Box(
             modifier = Modifier
@@ -170,8 +190,47 @@ class MainActivity : ComponentActivity() {
                 e == "kisiler" -> KisilerEkrani(y, secimKutusu = null)
                 e == "son" -> SonCagrilarEkrani(y)
                 e == "ayarlar" -> AyarlarEkrani(y)
+                e == "yeni" -> YeniKisiEkrani()
                 e.startsWith("sec") -> KisilerEkrani(y, secimKutusu = e.removePrefix("sec").toIntOrNull() ?: 0)
                 else -> AnaEkran(y)
+            }
+            val o = onay.value
+            if (o != null) OnayEkrani(o)
+        }
+    }
+
+    // ================= ARA / KAPAT ONAY EKRANI =================
+
+    @Composable
+    private fun OnayEkrani(o: Onay) {
+        BackHandler { onay.value = null }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Renk.Zemin)
+                .pointerInput(Unit) { detectTapGestures { } } // alttaki ekrana dokunulmasın
+                .padding(horizontal = 22.dp, vertical = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Avatar(o.isim, o.kisiId, 180.dp)
+            Spacer(Modifier.height(24.dp))
+            Text(
+                o.isim.uppercase(TR), fontSize = 42.sp, lineHeight = 46.sp, fontWeight = FontWeight.Bold,
+                color = Renk.Murekkep, textAlign = TextAlign.Center, maxLines = 2
+            )
+            if (o.isim != o.numara) {
+                Spacer(Modifier.height(6.dp))
+                Text(o.numara, fontSize = 26.sp, color = Renk.Soluk)
+            }
+            Spacer(Modifier.weight(1f))
+            BuyukDugme("ARA", Renk.Yesil, yukseklik = 120.dp, fontBoyu = 42.sp, ikon = R.drawable.ik_telefon) {
+                val numara = o.numara
+                onay.value = null
+                Veri.ara(this@MainActivity, numara)
+            }
+            Spacer(Modifier.height(18.dp))
+            BuyukDugme("KAPAT", Renk.Kirmizi, yukseklik = 120.dp, fontBoyu = 42.sp, ikon = R.drawable.ik_kapat) {
+                onay.value = null
             }
         }
     }
@@ -264,7 +323,7 @@ class MainActivity : ComponentActivity() {
                 .clip(sekil)
                 .background(Renk.Beyaz)
                 .border(2.dp, Renk.Cizgi, sekil)
-                .clickable(enabled = h != null) { if (h != null) Veri.ara(ctx, h.numara) },
+                .clickable(enabled = h != null) { if (h != null) araIstegi(h.etiket, h.numara, h.kisiId) },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -392,6 +451,12 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(12.dp))
+            if (secimKutusu == null) {
+                BuyukDugme("+ YENİ KİŞİ EKLE", Renk.Yesil, yukseklik = 64.dp, fontBoyu = 24.sp) {
+                    ekran.value = "yeni"
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             if (liste.isEmpty()) {
                 Text("Rehberde kimse yok ya da izin verilmedi.", fontSize = 22.sp, color = Renk.Soluk)
             } else if (gorunen.isEmpty()) {
@@ -407,7 +472,7 @@ class MainActivity : ComponentActivity() {
                             .background(Renk.Beyaz)
                             .border(2.dp, Renk.Cizgi, sekil)
                             .clickable {
-                                if (secimKutusu == null) Veri.ara(ctx, k.numara) else secilen = k
+                                if (secimKutusu == null) araIstegi(k.isim, k.numara, k.id) else secilen = k
                             }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -424,7 +489,7 @@ class MainActivity : ComponentActivity() {
             if (secimKutusu == null) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "İsme dokunun, hemen arar.", fontSize = 19.sp, color = Renk.Soluk,
+                    if (Veri.tekDokunus(ctx)) "İsme dokunun, hemen arar." else "Aramak için isme dokunun.", fontSize = 19.sp, color = Renk.Soluk,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -480,7 +545,7 @@ class MainActivity : ComponentActivity() {
                             .clip(sekil)
                             .background(Renk.Beyaz)
                             .border(2.dp, if (cevapsiz) Renk.Kirmizi else Renk.Cizgi, sekil)
-                            .clickable(enabled = c.numara.isNotBlank()) { Veri.ara(ctx, c.numara) }
+                            .clickable(enabled = c.numara.isNotBlank()) { araIstegi(c.isim ?: c.numara, c.numara, null) }
                             .padding(horizontal = 18.dp),
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -550,6 +615,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            Bolum("Arama şekli")
+            val tek = remember(y) { Veri.tekDokunus(ctx) }
+            SecenekSatiri("Tek dokunuşla hemen ara", "İsme ya da kutuya dokununca direkt arar", tek) {
+                Veri.tekDokunusYaz(ctx, true)
+                yenile.intValue++
+            }
+            SecenekSatiri("Önce sor", "İsme dokununca yeşil ARA ve kırmızı KAPAT çıkar", !tek) {
+                Veri.tekDokunusYaz(ctx, false)
+                yenile.intValue++
+            }
+
             Bolum("Kurulum")
             AyarSatiri("1. İzinleri ver", if (izinTamam) "Tamam" else "Eksik") { izinIstegi.launch(gerekliIzinler()) }
             AyarSatiri("2. Varsayılan telefon uygulaması yap", if (telefonTamam) "Tamam" else "Yapılmadı") {
@@ -564,6 +640,104 @@ class MainActivity : ComponentActivity() {
             AyarSatiri("Tuş takımı (numara çevir)", null) { startActivity(Intent(ctx, DialActivity::class.java)) }
             AyarSatiri("Telefonun tüm ayarları", null) { ayarAc(Settings.ACTION_SETTINGS) }
             Spacer(Modifier.height(20.dp))
+        }
+    }
+
+    @Composable
+    private fun SecenekSatiri(baslik: String, alt: String, secili: Boolean, tikla: () -> Unit) {
+        val sekil = RoundedCornerShape(14.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(sekil)
+                .background(Renk.Beyaz)
+                .border(if (secili) 3.dp else 1.dp, if (secili) Renk.Yesil else Renk.Cizgi, sekil)
+                .clickable(onClick = tikla)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (secili) Renk.Yesil else Renk.Cizgi),
+                contentAlignment = Alignment.Center
+            ) {
+                if (secili) Text("✓", color = Renk.Beyaz, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(baslik, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep)
+                Text(alt, fontSize = 16.sp, color = Renk.Soluk)
+            }
+        }
+    }
+
+    // ================= YENİ KİŞİ =================
+
+    @Composable
+    private fun YeniKisiEkrani() {
+        val ctx = LocalContext.current
+        var isim by remember { mutableStateOf("") }
+        var numara by remember { mutableStateOf("") }
+        val renkler = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = Renk.Beyaz,
+            unfocusedContainerColor = Renk.Beyaz,
+            focusedBorderColor = Renk.Murekkep,
+            unfocusedBorderColor = Renk.Cizgi
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            GeriBaslik("Yeni kişi") { ekran.value = "kisiler" }
+            Text("İsim", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep)
+            OutlinedTextField(
+                value = isim,
+                onValueChange = { isim = it },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 26.sp, color = Renk.Murekkep),
+                placeholder = { Text("Örneğin: Ayşe", fontSize = 22.sp, color = Renk.Soluk) },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                shape = RoundedCornerShape(18.dp),
+                colors = renkler,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Telefon numarası", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Renk.Murekkep)
+            OutlinedTextField(
+                value = numara,
+                onValueChange = { yeni -> numara = yeni.filter { it.isDigit() || it == '+' || it == ' ' } },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 26.sp, color = Renk.Murekkep),
+                placeholder = { Text("05xx xxx xx xx", fontSize = 22.sp, color = Renk.Soluk) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                shape = RoundedCornerShape(18.dp),
+                colors = renkler,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            BuyukDugme("KAYDET", Renk.Yesil, yukseklik = 96.dp, fontBoyu = 34.sp) {
+                when {
+                    isim.isBlank() || numara.isBlank() ->
+                        Toast.makeText(ctx, "İsim ve numarayı yazın", Toast.LENGTH_LONG).show()
+                    !Veri.izinVar(ctx, Manifest.permission.WRITE_CONTACTS) -> {
+                        Toast.makeText(ctx, "Önce rehber iznini verin", Toast.LENGTH_LONG).show()
+                        izinIstegi.launch(gerekliIzinler())
+                    }
+                    Veri.kisiEkle(ctx, isim.trim(), numara.trim()) -> {
+                        Toast.makeText(ctx, "${isim.trim()} kaydedildi", Toast.LENGTH_LONG).show()
+                        yenile.intValue++
+                        ekran.value = "kisiler"
+                    }
+                    else -> Toast.makeText(ctx, "Kaydedilemedi", Toast.LENGTH_LONG).show()
+                }
+            }
+            BuyukDugme("VAZGEÇ", Renk.Beyaz, yaziRengi = Renk.Murekkep, kenar = Renk.Cizgi, yukseklik = 80.dp, fontBoyu = 26.sp) {
+                ekran.value = "kisiler"
+            }
         }
     }
 

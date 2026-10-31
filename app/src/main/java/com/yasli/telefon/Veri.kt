@@ -2,6 +2,7 @@ package com.yasli.telefon
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentProviderOperation
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
@@ -80,6 +81,34 @@ object Veri {
         }
     }
 
+    /** Telefon hafızasına yeni kişi kaydeder. Başarılıysa true döner. */
+    fun kisiEkle(ctx: Context, isim: String, numara: String): Boolean {
+        if (!izinVar(ctx, Manifest.permission.WRITE_CONTACTS)) return false
+        val islemler = arrayListOf(
+            ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                .build(),
+            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, isim)
+                .build(),
+            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                .withValue(ContactsContract.Data.MIMETYPE, P.CONTENT_ITEM_TYPE)
+                .withValue(P.NUMBER, numara)
+                .withValue(P.TYPE, P.TYPE_MOBILE)
+                .build()
+        )
+        return try {
+            ctx.contentResolver.applyBatch(ContactsContract.AUTHORITY, islemler)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // ---------- Son çağrılar ----------
 
     fun sonCagrilar(ctx: Context): List<Cagri> {
@@ -147,6 +176,15 @@ object Veri {
             if (h == null) remove("kutu$i")
             else putString("kutu$i", "${h.etiket.replace("|", " ")}|${h.numara}|${h.kisiId ?: ""}")
         }
+    }
+
+    // ---------- Arama şekli ----------
+
+    /** true: dokununca hemen arar. false: önce ARA / KAPAT ekranı çıkar. */
+    fun tekDokunus(ctx: Context): Boolean = tercihler(ctx).getBoolean("tek_dokunus", true)
+
+    fun tekDokunusYaz(ctx: Context, deger: Boolean) {
+        tercihler(ctx).edit { putBoolean("tek_dokunus", deger) }
     }
 
     // ---------- Arama ----------
