@@ -37,10 +37,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -203,15 +206,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            Row(modifier = Modifier.height(100.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.height(78.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MenuDugmesi("KİŞİLER", R.drawable.ik_kisi, Renk.Murekkep, Renk.Beyaz, Modifier.weight(1f)) {
                     ekran.value = "kisiler"
                 }
-                MenuDugmesi("SON\nÇAĞRILAR", R.drawable.ik_gecmis, Renk.Murekkep, Renk.Beyaz, Modifier.weight(1f)) {
+                MenuDugmesi("SON ÇAĞRILAR", R.drawable.ik_gecmis, Renk.Murekkep, Renk.Beyaz, Modifier.weight(1f)) {
                     ekran.value = "son"
                 }
+            }
+            Row(modifier = Modifier.height(78.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MenuDugmesi("NUMARA ÇEVİR", R.drawable.ik_tuslar, Renk.Yesil, Renk.Beyaz, Modifier.weight(1f)) {
+                    startActivity(Intent(ctx, DialActivity::class.java))
+                }
                 MenuDugmesi(
-                    if (fenerAcik) "FENER\nAÇIK" else "FENER",
+                    if (fenerAcik) "FENER AÇIK" else "FENER",
                     R.drawable.ik_fener,
                     if (fenerAcik) Color(0xFFFFD54F) else Renk.Sari,
                     Renk.Murekkep,
@@ -283,20 +291,21 @@ class MainActivity : ComponentActivity() {
     private fun MenuDugmesi(
         yazi: String, ikon: Int, zemin: Color, yaziRengi: Color, modifier: Modifier, tikla: () -> Unit
     ) {
-        Column(
+        Row(
             modifier = modifier
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(20.dp))
                 .background(zemin)
-                .clickable(onClick = tikla),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .clickable(onClick = tikla)
+                .padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(painterResource(ikon), contentDescription = null, tint = yaziRengi, modifier = Modifier.size(34.dp))
-            Spacer(Modifier.height(4.dp))
+            Icon(painterResource(ikon), contentDescription = null, tint = yaziRengi, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                yazi, color = yaziRengi, fontSize = 18.sp, lineHeight = 20.sp,
-                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
+                yazi, color = yaziRengi, fontSize = 19.sp, lineHeight = 21.sp,
+                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2
             )
         }
     }
@@ -338,18 +347,58 @@ class MainActivity : ComponentActivity() {
             value = withContext(Dispatchers.IO) { Veri.kisiler(ctx) }
         }
         var secilen by remember { mutableStateOf<Veri.Kisi?>(null) }
+        var aranan by remember { mutableStateOf("") }
         val sekil = RoundedCornerShape(18.dp)
 
+        // İsimde ya da numarada geçen her kişiyi göster (Türkçe harflere uygun)
+        val arananKucuk = aranan.trim().lowercase(TR)
+        val arananRakam = aranan.filter { it.isDigit() }
+        val gorunen = if (arananKucuk.isEmpty()) liste else liste.filter { k ->
+            k.isim.lowercase(TR).contains(arananKucuk) ||
+                (arananRakam.length >= 3 && k.numara.filter { it.isDigit() }.contains(arananRakam))
+        }
+
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            GeriBaslik(if (secimKutusu == null) "Kişiler" else "Kutu ${secimKutusu + 1} için kişi seçin") {
+            GeriBaslik(if (secimKutusu == null) "Kişiler" else "Kutu ${secimKutusu + 1} için seçin") {
                 ekran.value = if (secimKutusu == null) "ana" else "ayarlar"
             }
             Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = aranan,
+                onValueChange = { aranan = it },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 24.sp, color = Renk.Murekkep),
+                placeholder = { Text("İsim yazarak arayın…", fontSize = 22.sp, color = Renk.Soluk) },
+                leadingIcon = {
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = Renk.Murekkep, modifier = Modifier.size(30.dp))
+                },
+                trailingIcon = {
+                    if (aranan.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.size(48.dp).clickable { aranan = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Clear, contentDescription = "Temizle", tint = Renk.Murekkep, modifier = Modifier.size(30.dp))
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(18.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Renk.Beyaz,
+                    unfocusedContainerColor = Renk.Beyaz,
+                    focusedBorderColor = Renk.Murekkep,
+                    unfocusedBorderColor = Renk.Cizgi
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
             if (liste.isEmpty()) {
                 Text("Rehberde kimse yok ya da izin verilmedi.", fontSize = 22.sp, color = Renk.Soluk)
+            } else if (gorunen.isEmpty()) {
+                Text("\"$aranan\" bulunamadı.", fontSize = 22.sp, color = Renk.Soluk)
             }
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(liste, key = { it.id }) { k ->
+                items(gorunen, key = { it.id }) { k ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
