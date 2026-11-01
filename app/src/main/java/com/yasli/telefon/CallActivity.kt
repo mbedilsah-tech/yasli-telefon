@@ -108,7 +108,8 @@ class CallActivity : ComponentActivity() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            Avatar(isim, kisi?.first, 200.dp)
+            val caliyor = durum == Call.STATE_RINGING
+            Avatar(isim, kisi?.first, if (caliyor) 130.dp else 200.dp)
             Spacer(Modifier.height(24.dp))
             Text(
                 text = isim.uppercase(TR),
@@ -123,12 +124,14 @@ class CallActivity : ComponentActivity() {
             Text(text = altYazi, fontSize = 30.sp, color = Renk.Soluk, textAlign = TextAlign.Center)
             Spacer(Modifier.weight(1f))
 
-            if (durum == Call.STATE_RINGING) {
-                BuyukDugme("CEVAP VER", Renk.Yesil, yukseklik = 120.dp, fontBoyu = 40.sp, ikon = R.drawable.ik_telefon) {
+            if (caliyor) {
+                // Tek dokunuş yeter, kaydırma yok. Cevap düğmesi bilerek en büyüğü.
+                Spacer(Modifier.height(16.dp))
+                BuyukDugme("CEVAP VER", Renk.Yesil, yukseklik = 190.dp, fontBoyu = 50.sp, ikon = R.drawable.ik_telefon) {
                     CallManager.cevapla()
                 }
-                Spacer(Modifier.height(18.dp))
-                BuyukDugme("REDDET", Renk.Kirmizi, yukseklik = 120.dp, fontBoyu = 40.sp, ikon = R.drawable.ik_kapat) {
+                Spacer(Modifier.height(20.dp))
+                BuyukDugme("REDDET", Renk.Kirmizi, yukseklik = 140.dp, fontBoyu = 42.sp, ikon = R.drawable.ik_kapat) {
                     CallManager.reddet()
                 }
             } else {
@@ -142,7 +145,7 @@ class CallActivity : ComponentActivity() {
                     ikon = R.drawable.ik_hoparlor
                 ) { CallManager.hoparlorDegistir() }
                 Spacer(Modifier.height(18.dp))
-                BuyukDugme("KAPAT", Renk.Kirmizi, yukseklik = 120.dp, fontBoyu = 40.sp, ikon = R.drawable.ik_kapat) {
+                BuyukDugme("KAPAT", Renk.Kirmizi, yukseklik = 170.dp, fontBoyu = 48.sp, ikon = R.drawable.ik_kapat) {
                     CallManager.kapat()
                 }
             }

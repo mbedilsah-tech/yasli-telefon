@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import java.io.ByteArrayOutputStream
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
@@ -64,6 +66,51 @@ object Veri {
             ?.use { BitmapFactory.decodeStream(it) }
     } catch (e: Exception) {
         null
+    }
+
+    /**
+     * Galeriden seçilen resmi kişinin rehber fotoğrafı yapar.
+     * Resim kare kırpılıp küçültülür. Başarılıysa true döner.
+     */
+    fun kisiFotosuYaz(ctx: Context, kisiId: Long, resim: Uri): Boolean {
+        if (!izinVar(ctx, Manifest.permission.WRITE_CONTACTS)) return false
+        return try {
+            // Fotoğrafı yan yatmadan, küçültülmüş olarak oku
+            val kaynak = ImageDecoder.createSource(ctx.contentResolver, resim)
+            val bmp = ImageDecoder.decodeBitmap(kaynak) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val w = info.size.width
+                val h = info.size.height
+                val kisa = minOf(w, h)
+                if (kisa > 900) {
+                    val oran = 900f / kisa
+                    decoder.setTargetSize((w * oran).toInt(), (h * oran).toInt())
+                }
+            }
+            // Ortadan kare kırp
+            val kenar = minOf(bmp.width, bmp.height)
+            val kare = Bitmap.createBitmap(bmp, (bmp.width - kenar) / 2, (bmp.height - kenar) / 2, kenar, kenar)
+            val baytlar = ByteArrayOutputStream().also { kare.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+
+            // Kişinin telefon hafızasındaki kaydını bul
+            val hamId = ctx.contentResolver.query(
+                ContactsContract.RawContacts.CONTENT_URI,
+                arrayOf(ContactsContract.RawContacts._ID),
+                "${ContactsContract.RawContacts.CONTACT_ID}=?",
+                arrayOf(kisiId.toString()), null
+            )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null } ?: return false
+
+            val hedef = Uri.withAppendedPath(
+                ContentUris.withAppendedId(ContactsContract.RawContacts.CONTENT_URI, hamId),
+                ContactsContract.RawContacts.DisplayPhoto.CONTENT_DIRECTORY
+            )
+            ctx.contentResolver.openAssetFileDescriptor(hedef, "rw")?.use { fd ->
+                fd.createOutputStream().use { it.write(baytlar) }
+            } ?: return false
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** Numaradan rehberdeki kişiyi bulur: (kişi no, isim) */

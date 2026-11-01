@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,11 +64,14 @@ fun avatarRengi(isim: String): Color =
 fun basHarf(isim: String): String =
     isim.trim().firstOrNull()?.toString()?.uppercase(TR) ?: "?"
 
+/** Bir fotoğraf değişince tüm yuvarlak resimler yeniden yüklensin diye. */
+val fotoSurumu = mutableIntStateOf(0)
+
 /** Kişinin fotoğrafı varsa onu, yoksa renkli daire içinde baş harfini gösterir. */
 @Composable
 fun Avatar(isim: String, kisiId: Long?, boyut: Dp) {
     val ctx = LocalContext.current
-    val foto by produceState<Bitmap?>(initialValue = null, kisiId) {
+    val foto by produceState<Bitmap?>(initialValue = null, kisiId, fotoSurumu.intValue) {
         value = if (kisiId != null) withContext(Dispatchers.IO) { Veri.kisiFotosu(ctx, kisiId) } else null
     }
     Box(

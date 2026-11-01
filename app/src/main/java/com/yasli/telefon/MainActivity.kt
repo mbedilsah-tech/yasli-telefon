@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -94,6 +95,40 @@ class MainActivity : ComponentActivity() {
 
     private val izinIstegi =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { yenile.intValue++ }
+    // Fotoğraf seçilince hangi kişiye yazılacak
+    private var fotoHedefi: Long? = null
+    private val resimSecici =
+        registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            val kisiId = fotoHedefi
+            fotoHedefi = null
+            if (uri != null && kisiId != null) {
+                if (Veri.kisiFotosuYaz(this, kisiId, uri)) {
+                    fotoSurumu.intValue++
+                    Toast.makeText(this, "Fotoğraf eklendi", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "Fotoğraf eklenemedi (SIM'deki kişilere eklenemez)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+    private fun fotoSec(kisiId: Long) {
+        if (!Veri.izinVar(this, Manifest.permission.WRITE_CONTACTS)) {
+            Toast.makeText(this, "Önce rehber iznini verin", Toast.LENGTH_LONG).show()
+            izinIstegi.launch(gerekliIzinler())
+            return
+        }
+        fotoHedefi = kisiId
+        resimSecici.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
+    private fun mesajlariAc() {
+        try {
+            startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MESSAGING))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Mesaj uygulaması bulunamadı", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private val rolIstegi =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { yenile.intValue++ }
 
@@ -177,7 +212,7 @@ class MainActivity : ComponentActivity() {
         BackHandler {
             val e = ekran.value
             ekran.value = when {
-                e.startsWith("sec") -> "ayarlar"
+                e.startsWith("sec") || e == "foto" -> "ayarlar"
                 e == "yeni" -> "kisiler"
                 else -> "ana"
             }
@@ -191,6 +226,7 @@ class MainActivity : ComponentActivity() {
             val e = ekran.value
             when {
                 e == "kisiler" -> KisilerEkrani(y, secimKutusu = null)
+                e == "foto" -> KisilerEkrani(y, secimKutusu = null, fotoModu = true)
                 e == "son" -> SonCagrilarEkrani(y)
                 e == "ayarlar" -> AyarlarEkrani(y)
                 e == "yeni" -> YeniKisiEkrani()
@@ -414,7 +450,8 @@ class MainActivity : ComponentActivity() {
     // ================= KİŞİLER =================
 
     @Composable
-    private fun KisilerEkrani(y: Int, secimKutusu: Int?) {
+    private fun KisilerEkrani(y: Int, secimKutusu: Int?, fotoModu: Boolean = false) {
+        val ayarModu = secimKutusu != null || fotoModu
         val ctx = LocalContext.current
         val liste by produceState(initialValue = emptyList<Veri.Kisi>(), y) {
             value = withContext(Dispatchers.IO) { Veri.kisiler(ctx) }
@@ -432,9 +469,12 @@ class MainActivity : ComponentActivity() {
         }
 
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            GeriBaslik(if (secimKutusu == null) "Kişiler" else "Kutu ${secimKutusu + 1} için seçin") {
-                ekran.value = if (secimKutusu == null) "ana" else "ayarlar"
+            val baslik = when {
+                fotoModu -> "Fotoğraf için kişi seçin"
+                secimKutusu != null -> "Kutu ${secimKutusu + 1} için seçin"
+                else -> "Kişiler"
             }
+            GeriBaslik(baslik) { ekran.value = if (ayarModu) "ayarlar" else "ana" }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = aranan,
@@ -465,7 +505,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(12.dp))
-            if (secimKutusu == null) {
+            if (!ayarModu) {
                 BuyukDugme("+ YENİ KİŞİ EKLE", Renk.Yesil, yukseklik = 64.dp, fontBoyu = 24.sp) {
                     ekran.value = "yeni"
                 }
@@ -486,7 +526,11 @@ class MainActivity : ComponentActivity() {
                             .background(Renk.Beyaz)
                             .border(2.dp, Renk.Cizgi, sekil)
                             .clickable {
-                                if (secimKutusu == null) araIstegi(k.isim, k.numara, k.id) else secilen = k
+                                when {
+                                    fotoModu -> fotoSec(k.id)
+                                    secimKutusu != null -> { secilen = k }
+                                    else -> araIstegi(k.isim, k.numara, k.id)
+                                }
                             }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -500,7 +544,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            if (secimKutusu == null) {
+            if (!ayarModu) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (Veri.tekDokunus(ctx)) "İsme dokunun, hemen arar." else "Aramak için isme dokunun.", fontSize = 19.sp, color = Renk.Soluk,
@@ -628,6 +672,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+
+            Bolum("Kişiler ve mesajlar")
+            AyarSatiri("Kişilere fotoğraf ekle", "Kişiyi seçin, sonra galeriden fotoğrafını seçin") {
+                ekran.value = "foto"
+            }
+            AyarSatiri("Mesajlar (SMS)", "Telefonun mesaj uygulamasını açar") { mesajlariAc() }
 
             Bolum("Arama şekli")
             val tek = remember(y) { Veri.tekDokunus(ctx) }
